@@ -29,43 +29,42 @@
 # Start of configuration
 #
 
+# Change to reflect your correct email addresses.
 TOEMAIL="email@domain.com"
 FROMEMAIL="root@FQDN"
 
-
-DIR=/usr/local/etc/letsencrypt/live/
-LETSENCRYPTSERVER='https://acme-v01.api.letsencrypt.org/directory'
-
+# Location of certificates. If other than default please change path.
+DIR="/usr/local/etc/letsencrypt/live"
 
 # Probably don't need to edit below here
+LETSENCRYPTSERVER='https://acme-v01.api.letsencrypt.org/directory'
 OPENSSL="/usr/bin/openssl"
 LETSENCRYPT="/usr/local/bin/letsencrypt"
 
-# It's good enough to reload nginx. Other webservers may require restart.
+# Manage the nginx service to free up port 80.
 STARTWEBSERVER="/usr/sbin/service nginx start"
 STOPWEBSERVER="/usr/sbin/service nginx stop"
 STATUSWEBSERVER="/usr/sbin/service nginx status"
 #
 # End of configuration.
 #
-
 #
 # !!! DO NOT EDIT BELOW HERE !!!
 #
 
-alias errecho='>&2 echo'
-
 cd $DIR
-if [ -f /usr/local/etc/letsencrypt/live/letsencrypt.log ]
+# My Letsencrypt tend to put a log file in here. Clear that log file before running the script
+if [ -f "$DIR"/letsencrypt.log ]
 then
-        rm /usr/local/etc/letsencrypt/live/letsencrypt.log
+        rm -f "$DIR"/letsencrypt.log
 fi
-
+# Read the list of all domains in $DIR
 for domain in *
 do
-  if $OPENSSL x509 -checkend 1209600 -noout -in /usr/local/etc/letsencrypt/live/"$domain"/fullchain.pem
+  if $OPENSSL x509 -checkend 1209600 -noout -in "$DIR"/"$domain"/fullchain.pem
   then
-    echo "The domain certificate for "$domain" is good for more than 14 days!"
+    SUBJECT=""$domain" certificate still valid!"
+    echo "The domain certificate for "$domain" is good for more than 14 days!" | mail -s "$SUBJECT" "$TOEMAIL" -r "$FROMEMAIL"
     exit
   else
     if $STATUSWEBSERVER
@@ -75,17 +74,21 @@ do
 
         $LETSENCRYPT certonly --renew --server $LETSENCRYPTSERVER -d $domain
         echo "Certificate is renewed. Retesting"
-        if $OPENSSL x509 -checkend 1209600 -noout -in /usr/local/etc/letsencrypt/live/"$domain"/fullchain.pem
+        if $OPENSSL x509 -checkend 1209600 -noout -in "$DIR"/"$domain"/fullchain.pem
         then
-        echo "Certificate renewed successfully!"
             SUBJECT=""$domain" certificate renewed!"
             echo "Certificate for "$domain" has been renewed and will be valid for the next 3 months." | mail -s "$SUBJECT" "$TOEMAIL" -r "$FROMEMAIL"
         else
-          errecho "Certificate failed to renew."
-          errecho "Check logs to troubleshoot."
+            SUBJECT=""$domain" certificate renewal failed!"
+            echo "Certificate failed to renew. Check logs to troubleshoot." | mail -s "$SUBJECT" "$TOEMAIL" -r "$FROMEMAIL"
         fi
   fi
 done
 # Starting webserver...
-$STARTWEBSERVER
+    if $STATUSWEBSERVER >/dev/null
+        then
+          exit
+        else
+          $STARTWEBSERVER
+    fi
 exit
